@@ -1,0 +1,74 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "fullName": {
+          "type": "string"
+        },
+        "joinedDate": {
+          "type": "string"
+        },
+        "preferredSize": {
+          "type": "number"
+        },
+        "favorites": {
+          "type": "array",
+          "description": "List of favorite product IDs"
+        }
+      },
+      "required": [
+        "email",
+        "fullName",
+        "joinedDate",
+        "preferredSize",
+        "favorites"
+      ]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Purchase order history for a user",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        },
+        "total": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "description": "Array of ordered products"
+        }
+      },
+      "required": [
+        "id",
+        "date",
+        "total",
+        "status",
+        "items"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile document indexed by Firebase Auth UID"
+    },
+    "/users/{userId}/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Detailed order history for a specific user"
+    }
+  }
+}
