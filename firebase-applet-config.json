@@ -1,10 +1,10 @@
 {
-  "projectId": "gen-lang-client-0309552250",
-  "appId": "1:723375821419:web:7aad00d9188e45a3b2172e",
-  "apiKey": "AIzaSyDp1GzDZLQF0Q0e4_muB-UtNeuqg5v7LO8",
-  "authDomain": "gen-lang-client-0309552250.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-9ded3c28-974a-4c44-91d2-ca5875f25a14",
-  "storageBucket": "gen-lang-client-0309552250.firebasestorage.app",
-  "messagingSenderId": "723375821419",
-  "measurementId": ""
+  "projectId": "elite-kicks",
+  "appId": "1:1027252698165:web:2dfc29f42d290ed9d4457c",
+  "apiKey": "AIzaSyA_nK6GVEsXp0oYAZH7fVqju2NJEpbNIjw",
+  "authDomain": "elite-kicks.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "elite-kicks.firebasestorage.app",
+  "messagingSenderId": "1027252698165",
+  "measurementId": "G-RS784Z9VKV"
 }
