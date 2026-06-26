@@ -45,6 +45,7 @@ export default function SearchView({
   const [analysisStep, setAnalysisStep] = useState('');
   const [matchedProduct, setMatchedProduct] = useState<Product | null>(null);
   const [matchConfidence, setMatchConfidence] = useState(0);
+  const [matchReason, setMatchReason] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -173,10 +174,11 @@ export default function SearchView({
     return { product: products[idx] || products[0], confidence: conf };
   };
 
-  const runAnalysis = (imageSrc: string, fileName?: string) => {
+  const runAnalysis = async (imageSrc: string, fileName?: string) => {
     setIsAnalyzing(true);
     setAnalysisProgress(0);
     setMatchedProduct(null);
+    setMatchReason(null);
 
     const steps = [
       { prg: 20, txt: 'Isolating shoe contour footprint...' },
@@ -186,20 +188,64 @@ export default function SearchView({
       { prg: 100, txt: 'Compiling matching products in catalog...' },
     ];
 
+    let apiResult: { productId: string; confidence: number; reason: string; error?: string } | null = null;
+    let apiError: string | null = null;
+
+    // Start API call immediately
+    const apiCall = fetch('/api/scan-footwear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: imageSrc })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) {
+          apiError = data.error;
+        } else {
+          apiResult = data;
+        }
+      })
+      .catch(err => {
+        console.error("Footwear scan API error:", err);
+        apiError = "Unable to connect to scanning service.";
+      });
+
     let currentStep = 0;
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       if (currentStep < steps.length) {
         setAnalysisProgress(steps[currentStep].prg);
         setAnalysisStep(steps[currentStep].txt);
         currentStep++;
       } else {
         clearInterval(interval);
-        const match = determineProductMatch(imageSrc, fileName);
-        setMatchedProduct(match.product);
-        setMatchConfidence(match.confidence);
+        
+        // Wait for API to resolve if it hasn't yet
+        await apiCall;
+
+        if (apiError || !apiResult) {
+          // If real API fails or falls back, run local match as a robust fallback
+          const fallbackMatch = determineProductMatch(imageSrc, fileName);
+          setMatchedProduct(fallbackMatch.product);
+          setMatchConfidence(fallbackMatch.confidence);
+          setMatchReason("Matched using visual fallback contour rules (GEMINI_API_KEY is not configured).");
+          console.warn("Using local scanner fallback: " + (apiError || "No response"));
+        } else {
+          const matchProduct = products.find(p => p.id === apiResult?.productId);
+          if (matchProduct) {
+            setMatchedProduct(matchProduct);
+            setMatchConfidence(apiResult.confidence);
+            setMatchReason(apiResult.reason);
+          } else {
+            // Product ID not found in current UI state catalog, use fallback
+            const fallbackMatch = determineProductMatch(imageSrc, fileName);
+            setMatchedProduct(fallbackMatch.product);
+            setMatchConfidence(fallbackMatch.confidence);
+            setMatchReason("Matched using local fallback contour rules.");
+          }
+        }
         setIsAnalyzing(false);
       }
-    }, 400);
+    }, 450);
   };
 
   // Standard filter items matching query or selecting tags
@@ -579,6 +625,11 @@ export default function SearchView({
                         <span className="text-[10px] font-display font-black text-blue-400 tracking-wider uppercase leading-none">{matchedProduct.category}</span>
                         <h4 className="font-display font-[900] text-sm text-white uppercase leading-snug mt-0.5">{matchedProduct.name}</h4>
                         <p className="text-xs text-neutral-400 font-medium leading-normal line-clamp-2 pt-1">{matchedProduct.description}</p>
+                        {matchReason && (
+                          <p className="text-[11px] text-blue-400 bg-blue-950/20 border border-blue-900/30 rounded-lg p-2 font-medium leading-normal mt-2">
+                            ✨ {matchReason}
+                          </p>
+                        )}
                         <div className="flex justify-between items-baseline pt-2.5">
                           <span className="text-sm font-display font-black text-white">${matchedProduct.price.toFixed(2)}</span>
                           <span className="text-[10px] text-neutral-500 font-bold leading-none">FREE EXPRESS DELIVERY</span>

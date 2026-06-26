@@ -6,7 +6,8 @@ import {
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword,
   signInWithPopup,
-  GoogleAuthProvider 
+  GoogleAuthProvider,
+  OAuthProvider
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
@@ -136,6 +137,36 @@ export default function AuthScreen({ onLoginSuccess, athleteSprinterImage }: Aut
           onLoginSuccess(
             data.email || user.email || '',
             data.fullName || user.displayName || 'Google Athlete',
+            data.preferredSize || 9.5,
+            false
+          );
+        }
+      } else if (providerName.toLowerCase() === 'apple') {
+        const provider = new OAuthProvider('apple.com');
+        const userCredential = await signInWithPopup(auth, provider);
+        const user = userCredential.user;
+        
+        const userDocRef = doc(db, 'users', user.uid);
+        const userDoc = await getDoc(userDocRef);
+        
+        if (!userDoc.exists()) {
+          const formattedName = (user.displayName || 'Apple Athlete').toUpperCase();
+          const initialProfile = {
+            email: user.email || '',
+            fullName: formattedName,
+            joinedDate: 'Jun 2026',
+            preferredSize: 9.5,
+            favorites: ['aero-blast-v2', 'volt-glide-runner']
+          };
+          await setDoc(userDocRef, initialProfile);
+          setIsSubmitting(false);
+          onLoginSuccess(user.email || '', formattedName, 9.5, true);
+        } else {
+          const data = userDoc.data();
+          setIsSubmitting(false);
+          onLoginSuccess(
+            data.email || user.email || '',
+            data.fullName || user.displayName || 'Apple Athlete',
             data.preferredSize || 9.5,
             false
           );

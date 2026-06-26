@@ -74,6 +74,7 @@ export default function CheckoutPage({
   const [isPlacing, setIsPlacing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [successOrderNumber, setSuccessOrderNumber] = useState('');
+  const [stripeSimulated, setStripeSimulated] = useState(false);
 
   if (!isOpen) return null;
 
@@ -150,25 +151,49 @@ export default function CheckoutPage({
     setIsEditingPayment(false);
   };
 
-  const handlePlaceOrderClick = () => {
+  const handlePlaceOrderClick = async () => {
     setIsPlacing(true);
-    setTimeout(() => {
-      setIsPlacing(false);
-      setIsSuccess(true);
-      const generatedNum = `EK-${Math.floor(100000 + Math.random() * 900000)}`;
-      setSuccessOrderNumber(generatedNum);
-      
-      // Execute global hooks
-      onPlaceOrder({
-        address,
-        payment: {
-          last4: payment.last4,
-          expiry: payment.expiry
-        },
-        total
+    setStripeSimulated(false);
+    
+    try {
+      // 1. Call Backend API to create Stripe Payment Intent
+      const response = await fetch('/api/create-payment-intent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: total })
       });
-      clearCart();
-    }, 1800);
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      
+      setStripeSimulated(!!data.simulated);
+      
+      // 2. Confirm payment locally (simulate payment confirmation delay)
+      setTimeout(() => {
+        setIsPlacing(false);
+        setIsSuccess(true);
+        const generatedNum = `EK-${Math.floor(100000 + Math.random() * 900000)}`;
+        setSuccessOrderNumber(generatedNum);
+        
+        // Execute global hooks
+        onPlaceOrder({
+          address,
+          payment: {
+            last4: payment.last4,
+            expiry: payment.expiry
+          },
+          total
+        });
+        clearCart();
+      }, 1500);
+      
+    } catch (err: any) {
+      console.error("Payment flow error:", err);
+      alert("Payment processing failed: " + (err.message || "Please check your network."));
+      setIsPlacing(false);
+    }
   };
 
   const handleCloseAndGoHome = () => {
@@ -594,6 +619,7 @@ export default function CheckoutPage({
                 <div className="bg-neutral-50 border border-neutral-100 rounded-xl p-3.5 mt-5 font-mono text-xs font-bold text-neutral-600 space-y-1">
                   <p>Order Reference: <span className="text-neutral-950 font-black">{successOrderNumber}</span></p>
                   <p>Express Shipping: <span className="text-[#0a46e4] font-black">ACTIVE</span></p>
+                  <p>Payment Mode: <span className={stripeSimulated ? "text-amber-600 font-black uppercase" : "text-emerald-600 font-black uppercase"}>{stripeSimulated ? "Simulated Stripe Test" : "Secured by Stripe"}</span></p>
                 </div>
               </div>
 

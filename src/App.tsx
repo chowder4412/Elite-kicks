@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Menu,
@@ -21,7 +22,7 @@ import { auth, db } from './lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, collection, getDocs } from 'firebase/firestore';
 
-import { products } from './data';
+import { products as localFallbackProducts } from './data';
 import { Product, CartItem, UserProfile, Category, Order } from './types';
 
 // Importing sub-components
@@ -29,12 +30,15 @@ import AuthScreen from './components/AuthScreen';
 import ProductCard from './components/ProductCard';
 import ProductDetails from './components/ProductDetails';
 import CartDrawer from './components/CartDrawer';
-import CheckoutPage from './components/CheckoutPage';
-import SearchView from './components/SearchView';
+const CheckoutPage = lazy(() => import('./components/CheckoutPage'));
+const SearchView = lazy(() => import('./components/SearchView'));
 import ProfileView from './components/ProfileView';
 import NotificationToast, { ToastMessage, ToastType } from './components/NotificationToast';
 
 export default function App() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
   // Authentication state (Starts false to display Signup/Signin Screen #1)
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [profile, setProfile] = useState<UserProfile>({
@@ -98,6 +102,7 @@ export default function App() {
   const [promoAppliedInCheckout, setPromoAppliedInCheckout] = useState<boolean>(false);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
   const [activeCategory, setActiveCategory] = useState<Category>('ALL');
+  const [products, setProducts] = useState<Product[]>(localFallbackProducts);
 
   // Flash toast notifications standardly
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -151,6 +156,76 @@ export default function App() {
     });
     return unsubscribe;
   }, []);
+
+  // Load products from Firestore, seed if empty
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const prodColRef = collection(db, 'products');
+        const prodSnap = await getDocs(prodColRef);
+        
+        if (!prodSnap.empty) {
+          const loadedProducts: Product[] = [];
+          prodSnap.forEach((d) => {
+            loadedProducts.push({ id: d.id, ...d.data() } as Product);
+          });
+          setProducts(loadedProducts);
+        } else {
+          // If empty and we are admin, seed it
+          if (isLoggedIn && profile.email === 'athlete@elitekicks.com') {
+            console.log("Database catalog is empty. Initializing seeding...");
+            for (const prod of localFallbackProducts) {
+              const docRef = doc(db, 'products', prod.id);
+              await setDoc(docRef, prod);
+            }
+            console.log("Seeding complete!");
+            // Reload
+            const reSnap = await getDocs(prodColRef);
+            const reLoaded: Product[] = [];
+            reSnap.forEach((d) => {
+              reLoaded.push({ id: d.id, ...d.data() } as Product);
+            });
+            setProducts(reLoaded);
+            addToast("Database catalog seeded successfully!");
+          }
+        }
+      } catch (err) {
+        console.error("Error loading products from cloud database, using local fallback:", err);
+      }
+    };
+
+    fetchProducts();
+  }, [isLoggedIn, profile.email]);
+
+  // Synchronize router location path with application state
+  useEffect(() => {
+    const path = location.pathname;
+    if (path === '/search') {
+      setActiveTab('search');
+      setIsCheckoutOpen(false);
+      setSelectedProduct(null);
+    } else if (path === '/profile') {
+      setActiveTab('profile');
+      setIsCheckoutOpen(false);
+      setSelectedProduct(null);
+    } else if (path === '/checkout') {
+      setIsCheckoutOpen(true);
+      setSelectedProduct(null);
+    } else if (path.startsWith('/product/')) {
+      const productId = path.split('/product/')[1];
+      const prod = products.find((p) => p.id === productId);
+      if (prod) {
+        setSelectedProduct(prod);
+      } else {
+        setSelectedProduct(null);
+      }
+      setIsCheckoutOpen(false);
+    } else {
+      setActiveTab('home');
+      setIsCheckoutOpen(false);
+      setSelectedProduct(null);
+    }
+  }, [location.pathname, products]);
 
   // Sync profile favoriteIds with client state and Firestore database
   useEffect(() => {
@@ -217,7 +292,7 @@ export default function App() {
     }
 
     addToast(`Added ${product.name} (Size US ${size} - ${color}) to cart`);
-    setSelectedProduct(null); // Close detail after add
+    navigate(location.pathname.includes('/search') ? '/search' : (location.pathname.includes('/profile') ? '/profile' : '/'));
     setIsCartOpen(true); // Open the summary cart list
   };
 
@@ -240,7 +315,7 @@ export default function App() {
   // Complete dynamic purchases
   const handleCheckoutCompletion = (promoUsed?: string) => {
     setPromoAppliedInCheckout(promoUsed === 'ELITE20');
-    setIsCheckoutOpen(true);
+    navigate('/checkout');
   };
 
   const handlePlaceOrderFromCheckout = (orderData: {
@@ -350,7 +425,7 @@ export default function App() {
         <h1
           id="app-theme-title"
           onClick={() => {
-            setActiveTab('home');
+            navigate('/');
             setActiveCategory('ALL');
           }}
           className="font-display font-[900] text-xl tracking-widest text-[#ffffff] cursor-pointer"
@@ -405,7 +480,7 @@ export default function App() {
                     id="explore-newdrop-cta"
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
-                    onClick={() => setSelectedProduct(aeroBlastShoe)}
+                    onClick={() => navigate('/product/' + aeroBlastShoe.id)}
                     className="bg-white hover:bg-neutral-100 text-black py-2.5 px-4 font-display text-xs font-[900] tracking-wider rounded-md uppercase cursor-pointer"
                   >
                     Explore Now
@@ -458,7 +533,7 @@ export default function App() {
                   <button
                     id="view-all-products-btn"
                     onClick={() => {
-                      setActiveTab('search');
+                      navigate('/search');
                       setActiveCategory('ALL');
                     }}
                     className="text-xs text-blue-500 font-bold tracking-wide uppercase hover:underline"
@@ -496,12 +571,19 @@ export default function App() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 10 }}
             >
-              <SearchView
-                products={products}
-                favorites={favoriteIds}
-                onToggleFavorite={handleToggleFavorite}
-                onSelectProduct={(p) => setSelectedProduct(p)}
-              />
+              <Suspense fallback={
+                <div className="flex flex-col items-center justify-center p-12 text-center">
+                  <span className="w-8 h-8 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin" />
+                  <p className="text-neutral-500 text-xs mt-3">Loading explore footwear...</p>
+                </div>
+              }>
+                <SearchView
+                  products={products}
+                  favorites={favoriteIds}
+                  onToggleFavorite={handleToggleFavorite}
+                  onSelectProduct={(p) => navigate(p ? '/product/' + p.id : '/')}
+                />
+              </Suspense>
             </motion.div>
           )}
 
@@ -515,7 +597,7 @@ export default function App() {
               <ProfileView
                 profile={profile}
                 products={products}
-                onSelectProduct={(p) => setSelectedProduct(p)}
+                onSelectProduct={(p) => navigate(p ? '/product/' + p.id : '/')}
                 onSetView={(v) => setActiveTab(v)}
                 onLogout={handleLogout}
                 onUpdateProfile={async (updated) => {
@@ -561,7 +643,7 @@ export default function App() {
                 if (tab.id === 'cart') {
                   setIsCartOpen(true);
                 } else {
-                  setActiveTab(tab.id as any);
+                  navigate(tab.id === 'home' ? '/' : '/' + tab.id);
                 }
               }}
               className="flex flex-col items-center justify-center p-2 relative h-12 w-12 transition-all cursor-pointer"
@@ -632,7 +714,7 @@ export default function App() {
                 <button
                   id="sidebar-home-link"
                   onClick={() => {
-                    setActiveTab('home');
+                    navigate('/');
                     setSidebarOpen(false);
                   }}
                   className="w-full flex items-center justify-between text-sm py-2 hover:text-blue-500 font-semibold transition-colors"
@@ -643,7 +725,7 @@ export default function App() {
                 <button
                   id="sidebar-search-link"
                   onClick={() => {
-                    setActiveTab('search');
+                    navigate('/search');
                     setSidebarOpen(false);
                   }}
                   className="w-full flex items-center justify-between text-sm py-2 hover:text-blue-500 font-semibold transition-colors"
@@ -654,7 +736,7 @@ export default function App() {
                 <button
                   id="sidebar-profile-link"
                   onClick={() => {
-                    setActiveTab('profile');
+                    navigate('/profile');
                     setSidebarOpen(false);
                   }}
                   className="w-full flex items-center justify-between text-sm py-2 hover:text-blue-500 font-semibold transition-colors"
@@ -693,7 +775,7 @@ export default function App() {
       <ProductDetails
         product={selectedProduct}
         isOpen={selectedProduct !== null}
-        onClose={() => setSelectedProduct(null)}
+        onClose={() => navigate(location.pathname.includes('/search') ? '/search' : (location.pathname.includes('/profile') ? '/profile' : '/'))}
         isFavorite={selectedProduct ? favoriteIds.includes(selectedProduct.id) : false}
         onToggleFavorite={handleToggleFavorite}
         onAddToCart={handleAddToCart}
@@ -710,14 +792,16 @@ export default function App() {
       />
 
       {/* Dynamic Checkout Page matching user mockup */}
-      <CheckoutPage
-        isOpen={isCheckoutOpen}
-        onClose={() => setIsCheckoutOpen(false)}
-        cartItems={cartItems}
-        promoApplied={promoAppliedInCheckout}
-        onPlaceOrder={handlePlaceOrderFromCheckout}
-        clearCart={handleClearCart}
-      />
+      <Suspense fallback={null}>
+        <CheckoutPage
+          isOpen={isCheckoutOpen}
+          onClose={() => navigate(location.pathname.includes('/search') ? '/search' : (location.pathname.includes('/profile') ? '/profile' : '/'))}
+          cartItems={cartItems}
+          promoApplied={promoAppliedInCheckout}
+          onPlaceOrder={handlePlaceOrderFromCheckout}
+          clearCart={handleClearCart}
+        />
+      </Suspense>
 
       {/* Toast notifications */}
       <NotificationToast toasts={toasts} onDismiss={removeToast} />
